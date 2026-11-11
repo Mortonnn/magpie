@@ -423,11 +423,16 @@ type Weighed struct {
 	Unread string `json:"unread,omitempty"`
 	// SpendCap: held (Capped, at 100) as the key has spent the spend cap
 	// set on it, in USD: Spent of it over SpendPeriod (day, month or
-	// total, counted from SpendSince)
+	// total, counted from SpendSince). SpendAmount and SpendCur are the
+	// cap as the user typed it and its currency, a cap set in yuan told in
+	// yuan; SpendRate is the yuan a dollar counted at.
 	SpendCap    float64    `json:"spendCap,omitempty"`
 	Spent       float64    `json:"spent,omitempty"`
 	SpendPeriod string     `json:"spendPeriod,omitempty"`
 	SpendSince  *time.Time `json:"spendSince,omitempty"`
+	SpendAmount float64    `json:"spendAmount,omitempty"`
+	SpendCur    string     `json:"spendCur,omitempty"`
+	SpendRate   float64    `json:"spendRate,omitempty"`
 	// Credits: a Codex account that goes on past its allowance on its
 	// credits, and is let spend them: all but used up, it still answers,
 	// and goes before those used up with nothing to go on with

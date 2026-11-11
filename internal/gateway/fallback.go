@@ -125,10 +125,15 @@ type capHold struct {
 
 // spendHold is how a key is held at its spend cap: the cap, what magpie
 // counted spent in its period, and the period (its start for one in all).
+// amount and cur are the cap as the user typed it and its currency, so a
+// cap set in yuan is told in yuan; rate is the yuan a dollar counted at.
 type spendHold struct {
 	usd, spent float64
 	period     string
 	since      time.Time
+	amount     float64
+	cur        string
+	rate       float64
 }
 
 // spendHeld is how the key k of p is held at the spend cap set on it at
@@ -143,7 +148,13 @@ func spendHeld(p provider.Provider, k provider.KeyAccount, now time.Time) *capHo
 	if spent < sc.USD {
 		return nil
 	}
-	return &capHold{cap: 100, used: 100 * spent / sc.USD, back: reset, spend: &spendHold{usd: sc.USD, spent: spent, period: sc.Period, since: start}}
+	amount, cur := sc.Amount()
+	sp := &spendHold{usd: sc.USD, spent: spent, period: sc.Period, since: start}
+	if sc.CNY != nil {
+		// a cap typed in yuan is told in yuan, at the rate it was set at
+		sp.amount, sp.cur, sp.rate = amount, cur, sc.Rate
+	}
+	return &capHold{cap: 100, used: 100 * spent / sc.USD, back: reset, spend: sp}
 }
 
 // label names a candidate in a call's record: the provider, and the key
@@ -1061,7 +1072,14 @@ func heldReasons(ws []Weighed, now time.Time) ([]string, time.Time) {
 			s = fmt.Sprintf("%s (%s) has used %s %s of a usage window, past its cap of %s", w.Name, w.Who, amountText(w.CapCount), w.CapUnit, amountText(w.CapAmount))
 		}
 		if w.SpendCap > 0 {
-			s = fmt.Sprintf("%s (%s) has spent %s of the %s spend cap set on it %s, as magpie's usage prices its calls", w.Name, w.Who, usd(w.Spent), usd(w.SpendCap), spendPeriod(w.SpendPeriod, w.SpendSince, now))
+			capText, spentText := usd(w.SpendCap), usd(w.Spent)
+			if w.SpendCur == "cny" {
+				capText = moneyIn(w.SpendAmount, "cny")
+				if w.SpendRate > 0 {
+					spentText = moneyIn(w.Spent*w.SpendRate, "cny")
+				}
+			}
+			s = fmt.Sprintf("%s (%s) has spent %s of the %s spend cap set on it %s, as magpie's usage prices its calls", w.Name, w.Who, spentText, capText, spendPeriod(w.SpendPeriod, w.SpendSince, now))
 		}
 		if w.NoCredits {
 			s = fmt.Sprintf("%s (%s) has used up a usage window and is set not to spend its credits", w.Name, w.Who)
@@ -1108,6 +1126,16 @@ func amountText(v float64) string {
 // usd is an amount in dollars as a spend cap is told: cents kept.
 func usd(v float64) string {
 	return "$" + strconv.FormatFloat(math.Floor(v*100+0.5)/100, 'f', 2, 64)
+}
+
+// moneyIn is an amount in cur ("cny" or "usd") as a spend cap is told:
+// cents kept.
+func moneyIn(v float64, cur string) string {
+	sign := "$"
+	if cur == "cny" {
+		sign = "¥"
+	}
+	return sign + strconv.FormatFloat(math.Floor(v*100+0.5)/100, 'f', 2, 64)
 }
 
 // spendPeriod is the period a spend cap counts over, as a reason tells it.
@@ -1226,6 +1254,7 @@ func barredOf(cs []candidate, q provider.Provider, fallback bool, from provider.
 			w.CapAmount, w.CapCount, w.CapUnit = h.amount, h.count, h.unit
 			if sp := h.spend; sp != nil {
 				w.SpendCap, w.Spent, w.SpendPeriod = sp.usd, sp.spent, sp.period
+				w.SpendAmount, w.SpendCur, w.SpendRate = sp.amount, sp.cur, sp.rate
 				if sp.period == provider.SpendTotal {
 					w.SpendSince = &sp.since
 				}

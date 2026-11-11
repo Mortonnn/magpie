@@ -24,6 +24,7 @@ const fresh = () => ({
     { id: "k1", name: "Main", masked: "sk-…one", on: true, spend: { usd: 20, period: "day", spent: 7.5 } },
     { id: "k2", name: "Team", masked: "sk-…two", on: true, spend: { usd: 5, period: "month", spent: 6, held: true, reset: new Date(Date.now() + 3 * 864e5).toISOString() } },
     { id: "k3", name: "Spare", masked: "sk-…three", on: true },
+    { id: "k4", name: "Yuan", masked: "sk-…four", on: true, spend: { cny: 100, period: "day", spent: 2.8, rate: 7.2 } },
   ],
   balanceToken: { takes: false, set: false }, proxy: "",
 });
@@ -60,11 +61,11 @@ function serve(lang, posts) {
 }
 
 const words = {
-  en: { k1: "$7.50 of $20.00 today", k2: "$6.00 of $5.00 this month", none: "No spend cap", held: "At its spend cap · back ", menu: "Spend cap", month: "Per month…", k3: "$0.00 of $12.50 this month", bad: "A spend cap is an amount in USD above 0, up to 1,000,000" },
-  zh: { k1: "今日 $7.50 / $20.00", k2: "本月 $6.00 / $5.00", none: "无消费上限", held: "已达消费上限 · ", menu: "消费上限", month: "每月…", k3: "本月 $0.00 / $12.50", bad: "消费上限是大于 0、不超过 1,000,000 的美元金额" },
-  "zh-TW": { k1: "今日 $7.50 / $20.00", k2: "本月 $6.00 / $5.00", none: "無消費上限", held: "已達消費上限 · ", menu: "消費上限", month: "每月…", k3: "本月 $0.00 / $12.50", bad: "消費上限是大於 0、不超過 1,000,000 的美元金額" },
-  ja: { k1: "今日 $7.50 / $20.00", k2: "今月 $6.00 / $5.00", none: "支出上限なし", held: "支出上限に到達 · ", menu: "支出上限", month: "1か月あたり…", k3: "今月 $0.00 / $12.50", bad: "支出上限は 0 より大きく 1,000,000 以下の USD 金額です" },
-  de: { k1: "Heute $7.50 von $20.00", k2: "Diesen Monat $6.00 von $5.00", none: "Kein Ausgabenlimit", held: "Am Ausgabenlimit · zurück ", menu: "Ausgabenlimit", month: "Pro Monat…", k3: "Diesen Monat $0.00 von $12.50", bad: "Ein Ausgabenlimit ist ein Betrag in USD über 0, bis 1.000.000" },
+  en: { k1: "$7.50 of $20.00 today", k2: "$6.00 of $5.00 this month", none: "No spend cap", held: "At its spend cap · back ", menu: "Spend cap", month: "Per month…", k3: "$0.00 of $12.50 this month", k4: "¥20.16 of ¥100.00 today", k3yuan: "¥0.00 of ¥100.00 this month", bad: "A spend cap is an amount in USD or in yuan (¥) above 0, up to 1,000,000" },
+  zh: { k1: "今日 $7.50 / $20.00", k2: "本月 $6.00 / $5.00", none: "无消费上限", held: "已达消费上限 · ", menu: "消费上限", month: "每月…", k3: "本月 $0.00 / $12.50", k4: "今日 ¥20.16 / ¥100.00", k3yuan: "本月 ¥0.00 / ¥100.00", bad: "消费上限是大于 0、不超过 1,000,000 的美元或人民币（¥）金额" },
+  "zh-TW": { k1: "今日 $7.50 / $20.00", k2: "本月 $6.00 / $5.00", none: "無消費上限", held: "已達消費上限 · ", menu: "消費上限", month: "每月…", k3: "本月 $0.00 / $12.50", k4: "今日 ¥20.16 / ¥100.00", k3yuan: "本月 ¥0.00 / ¥100.00", bad: "消費上限是大於 0、不超過 1,000,000 的美元或人民幣（¥）金額" },
+  ja: { k1: "今日 $7.50 / $20.00", k2: "今月 $6.00 / $5.00", none: "支出上限なし", held: "支出上限に到達 · ", menu: "支出上限", month: "1か月あたり…", k3: "今月 $0.00 / $12.50", k4: "今日 ¥20.16 / ¥100.00", k3yuan: "今月 ¥0.00 / ¥100.00", bad: "支出上限は 0 より大きく 1,000,000 以下の USD または人民元（¥）金額です" },
+  de: { k1: "Heute $7.50 von $20.00", k2: "Diesen Monat $6.00 von $5.00", none: "Kein Ausgabenlimit", held: "Am Ausgabenlimit · zurück ", menu: "Ausgabenlimit", month: "Pro Monat…", k3: "Diesen Monat $0.00 von $12.50", k4: "Heute ¥20.16 von ¥100.00", k3yuan: "Diesen Monat ¥0.00 von ¥100.00", bad: "Ein Ausgabenlimit ist ein Betrag in USD oder Yuan (¥) über 0, bis 1.000.000" },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -115,6 +116,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(await pill("k1").textContent(), w.k1);
         assert.equal(await pill("k2").textContent(), w.k2);
         assert.equal(await pill("k3").textContent(), w.none);
+        assert.equal(await pill("k4").textContent(), w.k4);
         assert.equal(await page.locator("select").count(), 0, "no native select");
         // one at its cap is marked, with a line saying when it is back
         assert.equal(await pill("k2").evaluate((e) => e.classList.contains("at-cap")), true);
@@ -154,13 +156,19 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await menu.waitFor();
         await item(w.month).click();
         await box.waitFor();
-        await box.fill("12.5");
+        // a cap typed in yuan: the currency button beside the field picks it
+        const cur = row("k3").locator(".aspend-cur");
+        await cur.waitFor();
+        await cur.click();
+        await page.locator(".proto-menu .pm-item", { has: page.locator(".pm-name", { hasText: /^¥ CNY$/ }) }).click();
+        await box.waitFor();
+        await box.fill("100");
         await box.press("Enter");
         let p = await posted(n);
         assert.equal(p.action, "keyspendcap");
-        assert.deepEqual(p.body, { id: "relay", account: "k3", spend: { usd: 12.5, period: "month" } });
+        assert.deepEqual(p.body, { id: "relay", account: "k3", spend: { cny: 100, period: "month" } });
         await page.waitForTimeout(250);
-        assert.equal(await pill("k3").textContent(), w.k3);
+        assert.equal(await pill("k3").textContent(), w.k3yuan);
 
         // k1's cap taken off
         await still("k1");

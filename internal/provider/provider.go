@@ -555,9 +555,10 @@ type Provider struct {
 	// (see account_names.go).
 	AccountNames map[string]string `json:"accountNames,omitempty"`
 	// KeySpendCaps is, for a provider of API keys, how much each key the
-	// user capped may spend, in USD as the Usage page prices its calls,
-	// a day, a month or in all, by its KeyID: past it, routing takes the
-	// key for used up until the period renews (see key_spend.go).
+	// user capped may spend, in USD as the Usage page prices its calls (or
+	// typed in yuan, its USD worked out at the rate then), a day, a month
+	// or in all, by its KeyID: past it, routing takes the key for used up
+	// until the period renews (see key_spend.go).
 	KeySpendCaps map[string]SpendCap `json:"keySpendCaps,omitempty"`
 	// KeyOwnBalances is, for a provider of API keys whose vendor tells no
 	// balance, what the user typed is left on each key, by its KeyID: the

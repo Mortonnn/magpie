@@ -8,12 +8,12 @@ import (
 	stats "github.com/yetone/magpie/internal/usage"
 )
 
-const spendCapUsage = "magpie provider spend-cap <id> [key [usd [day|month|total]|off]]"
+const spendCapUsage = "magpie provider spend-cap <id> [key [amount [day|month|total]|off]]"
 
 // spendCapCmd shows, or sets, how much a provider's API keys may spend
 // (sparkling_lemur_62868 on Discord): in USD as the Usage page prices
-// their calls, a day, a month or in all. At it, routing takes the key for
-// used up (provider/key_spend.go).
+// their calls, or typed in yuan ("¥140", "140cny"), a day, a month or in
+// all. At it, routing takes the key for used up (provider/key_spend.go).
 func spendCapCmd(rest []string) error {
 	if len(rest) < 1 || len(rest) > 4 {
 		return fmt.Errorf("%s", spendCapUsage)
@@ -71,7 +71,12 @@ func spendCapCmd(rest []string) error {
 		}
 		start, reset := sc.Window(now)
 		spent := stats.KeySpent(k.ID, start)
-		line := fmt.Sprintf("%s · $%.2f of $%.2f %s", name, spent, sc.USD, spendCapPeriod(sc, start))
+		amount, cur := sc.Amount()
+		spentText, capText := spendMoney(spent, "usd"), spendMoney(amount, cur)
+		if cur == "cny" && sc.Rate > 0 {
+			spentText = spendMoney(spent*sc.Rate, "cny")
+		}
+		line := fmt.Sprintf("%s · %s of %s %s", name, spentText, capText, spendCapPeriod(sc, start))
 		switch {
 		case spent >= sc.USD && reset.IsZero():
 			line += " · at its cap"
@@ -81,6 +86,16 @@ func spendCapCmd(rest []string) error {
 		fmt.Println(line)
 	}
 	return nil
+}
+
+// spendMoney is an amount in cur ("cny" or "usd") as a spend cap line
+// tells it.
+func spendMoney(v float64, cur string) string {
+	sign := "$"
+	if cur == "cny" {
+		sign = "¥"
+	}
+	return fmt.Sprintf("%s%.2f", sign, v)
 }
 
 // spendCapPeriod is the period of sc as a line tells it.

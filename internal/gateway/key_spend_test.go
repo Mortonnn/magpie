@@ -96,6 +96,22 @@ func TestKeySpendCapPassesTheKeyOver(t *testing.T) {
 		!strings.Contains(e.Error.Message, "Spare") || !strings.Contains(e.Error.Message, "for today") || !strings.Contains(e.Error.Message, "spend-cap") {
 		t.Fatalf("both at their caps: %d %s, upstream got %v", code, body, got)
 	}
+	// a cap typed in yuan is told in yuan: the same $6.00 spent is ¥43.20
+	// of a ¥36.00 cap at the rate it was set at
+	yuan36 := 36.0
+	pp, err := provider.Find("plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp.KeySpendCaps[provider.KeyID("sk-team")] = provider.SpendCap{USD: 5, CNY: &yuan36, Rate: 7.2, Period: provider.SpendTotal, Since: since}
+	if err := provider.Save(*pp); err != nil {
+		t.Fatal(err)
+	}
+	code, body, got = post()
+	json.Unmarshal([]byte(body), &e)
+	if code != 429 || !strings.Contains(e.Error.Message, "¥43.20 of the ¥36.00 spend cap") {
+		t.Fatalf("a cap in yuan: %d %s, upstream got %v", code, body, got)
+	}
 	// with a fallback, it serves
 	p, _ := provider.Find("plan")
 	p.Fallback = []string{"spare/m2"}

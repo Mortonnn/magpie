@@ -3012,8 +3012,8 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .acc :is(.aspend, .abal).at-cap { color: var(--accent); background: var(--accent-soft); font-weight: 500; }
 .acc :is(.aspend, .abal):hover, .acc :is(.aspend, .abal).open { color: var(--fg); background: var(--pill-hover); }
 .acc :is(.aspend-in, .abal-in) { width: 72px; }
-.acc .abal-cur { flex: none; display: inline-flex; align-items: center; gap: 1px; height: 24px; margin-left: -5px; padding: 0 3px 0 7px; font: inherit; font-size: 11px; color: var(--muted); border: 0; border-radius: 5px; background: none; box-shadow: inset 0 0 0 1px var(--line); cursor: default; }
-.acc .abal-cur:hover, .acc .abal-cur.open { color: var(--fg); background: var(--pill-hover); }
+.acc :is(.abal-cur, .aspend-cur) { flex: none; display: inline-flex; align-items: center; gap: 1px; height: 24px; margin-left: -5px; padding: 0 3px 0 7px; font: inherit; font-size: 11px; color: var(--muted); border: 0; border-radius: 5px; background: none; box-shadow: inset 0 0 0 1px var(--line); cursor: default; }
+.acc :is(.abal-cur, .aspend-cur):hover, .acc :is(.abal-cur, .aspend-cur).open { color: var(--fg); background: var(--pill-hover); }
 .acc .abal .abal-exp { margin-left: .3em; }
 .acc .abal .abal-exp.soon { color: var(--amber); }
 .sess-menu .pm-note.soon { color: var(--amber); }
@@ -3509,6 +3509,9 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
   transition: border-color .12s, box-shadow .12s;
 }
 .editor input:focus, .editor .headers textarea.json:focus, .editor .extra-body textarea.json:focus, .acc input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); outline: none; }
+/* a spend cap typed in place keeps its narrow field, so the currency button
+   beside it stays on the row (the generic input rule above stretches it) */
+.acc input.aspend-in { width: 72px; }
 .editor input::placeholder, .acc input::placeholder { color: var(--faint); }
 .editor .pair { display: flex; gap: 8px; align-items: center; }
 .editor .pair input:first-child { flex: 1; }

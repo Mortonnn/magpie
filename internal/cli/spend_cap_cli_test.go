@@ -1,8 +1,14 @@
 package cli
 
 import (
+	"encoding/json"
+	"math"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/yetone/magpie/internal/fx"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -59,5 +65,44 @@ func TestSpendCapCmd(t *testing.T) {
 	}
 	if _, ok := capOf(); ok {
 		t.Fatal("off left the cap")
+	}
+}
+
+// A cap may be given in yuan too ("¥72", "72cny", "72元"): it is worked out
+// in USD at the dollar's rate in yuan magpie last learned, and the yuan
+// amount and rate are kept with it.
+func TestSpendCapCmdInYuan(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("DSH_HOME", "")
+	if err := provider.Save(provider.Provider{ID: "relay", Name: "Relay", Key: "k1", KeyName: "Team", Chat: "http://127.0.0.1:1/v1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(fx.CachePath()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(fx.Rate{CNYPerUSD: 7.2, At: time.Now()})
+	if err := os.WriteFile(fx.CachePath(), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fx.Reset()
+	t.Cleanup(fx.Reset)
+	if err := providerCmd([]string{"provider", "spend-cap", "relay", "Team", "¥72", "day"}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := provider.Find("relay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := p.KeySpendCap(provider.KeyID("k1"))
+	if !ok || c.CNY == nil || *c.CNY != 72 || math.Abs(c.USD-10) > 1e-9 || c.Rate != 7.2 || c.Period != provider.SpendDay {
+		t.Fatalf("a cap in yuan: %+v %v", c, ok)
+	}
+	// and it is listed in yuan, off the same numbers
+	if err := providerCmd([]string{"provider", "spend-cap", "relay"}); err != nil {
+		t.Fatal(err)
 	}
 }

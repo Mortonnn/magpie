@@ -1797,8 +1797,9 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			// weight routing, 1 to provider.MaxKeyWeight (0 or 1: none)
 			Weight int `json:"weight"`
 			// Spend, for keyspendcap: the spend cap set on the key Account
-			// (its id), in USD a day, a month or in all; none, or an
-			// amount of 0, takes it off
+			// (its id), in USD a day, a month or in all (or in CNY, its USD
+			// worked out when it is saved); none, or an amount of 0, takes
+			// it off
 			Spend *provider.SpendCap `json:"spend"`
 			// Balance, for keyownbalance: the balance typed for the key
 			// Account (its id), counted from now, in USD or, with Currency
@@ -2540,8 +2541,8 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			}
 		case "keyspendcap":
 			var c *provider.SpendCap
-			if req.Spend != nil && req.Spend.USD > 0 {
-				c = &provider.SpendCap{USD: req.Spend.USD, Period: req.Spend.Period}
+			if req.Spend != nil && (req.Spend.USD > 0 || req.Spend.CNY != nil) {
+				c = &provider.SpendCap{USD: req.Spend.USD, CNY: req.Spend.CNY, Period: req.Spend.Period}
 			}
 			if err := provider.SetKeySpendCap(in.ID, req.Account, c); err != nil {
 				fail(rw, err)

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -130,5 +131,65 @@ func TestParseSpendCap(t *testing.T) {
 		if _, err := ParseSpendCap(bad[0], bad[1]); err == nil {
 			t.Fatalf("%q %q was taken", bad[0], bad[1])
 		}
+	}
+	// yuan is a currency of its own, parsed apart, and worked out in USD
+	// only when it is saved
+	for _, c := range []struct{ amount, period string }{{"¥140", ""}, {"140cny", "month"}, {"140 rmb", ""}, {"140元", "total"}} {
+		got, err := ParseSpendCap(c.amount, c.period)
+		if err != nil || got == nil || got.CNY == nil || *got.CNY != 140 || got.USD != 0 {
+			t.Fatalf("%q %q: %+v %v", c.amount, c.period, got, err)
+		}
+	}
+}
+
+// A key's spend cap may be typed in yuan, the way its balance is: the cap
+// holds the key at the amount's value in USD at the dollar's rate in yuan
+// magpie last learned, and Rate keeps that rate so what the row shows stays
+// what routing holds it at. A rate magpie never learned refuses a cap in
+// yuan rather than guess, and a cap is in one currency, not both.
+func TestKeySpendCapInYuan(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	old := cnyPerUSD
+	cnyPerUSD = func() (float64, bool) { return 7.2, true }
+	t.Cleanup(func() { cnyPerUSD = old })
+	if err := Save(Provider{ID: "relay", Name: "Relay", Chat: "https://relay.test/v1", Key: "sk-first", KeyName: "Team"}); err != nil {
+		t.Fatal(err)
+	}
+	yuan := 72.0
+	if err := SetKeySpendCap("relay", "Team", &SpendCap{CNY: &yuan, Period: SpendDay}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Find("relay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := p.KeySpendCap(KeyID("sk-first"))
+	if !ok || c.CNY == nil || *c.CNY != 72 || math.Abs(c.USD-10) > 1e-9 || c.Rate != 7.2 {
+		t.Fatalf("Team's cap in yuan %+v %v", c, ok)
+	}
+	if amount, cur := c.Amount(); amount != 72 || cur != "cny" {
+		t.Fatalf("Amount() = %v %q, want 72 cny", amount, cur)
+	}
+	// the CLI's words for yuan, saved through the same path
+	parsed, err := ParseSpendCap("¥140", "month")
+	if err != nil || parsed == nil || parsed.CNY == nil || *parsed.CNY != 140 {
+		t.Fatalf("¥140 parsed %+v %v", parsed, err)
+	}
+	if err := SetKeySpendCap("relay", "Team", parsed); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = Find("relay")
+	if c, ok = p.KeySpendCap(KeyID("sk-first")); !ok || math.Abs(c.USD-140.0/7.2) > 1e-9 || c.Rate != 7.2 {
+		t.Fatalf("¥140 worked out %+v %v", c, ok)
+	}
+	// a rate never learned is no rate to count at
+	cnyPerUSD = func() (float64, bool) { return 0, false }
+	if err := SetKeySpendCap("relay", "Team", &SpendCap{CNY: &yuan, Period: SpendDay}); err == nil {
+		t.Fatal("a cap in yuan was taken with no rate learned")
+	}
+	// and a cap is in one currency, not both
+	if err := SetKeySpendCap("relay", "Team", &SpendCap{USD: 5, CNY: &yuan, Period: SpendDay}); err == nil {
+		t.Fatal("a cap in both currencies was taken")
 	}
 }

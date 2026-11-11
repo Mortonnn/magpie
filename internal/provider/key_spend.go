@@ -24,14 +24,36 @@ import (
 	"time"
 )
 
-// SpendCap is a key's spend cap: USD over Period, which is SpendDay,
-// SpendMonth or SpendTotal (in all, counted from Since).
+// SpendCap is a key's spend cap over Period, which is SpendDay, SpendMonth
+// or SpendTotal (in all, counted from Since).
+//
+// The amount is USD: what the cap holds the key at, as magpie's usage
+// prices its calls. A cap may also be typed in yuan, the way a key's
+// balance is (key_balance_own.go): CNY keeps the amount as typed and Rate
+// the dollar's rate in yuan when it was set, while USD stays its value at
+// that rate, which is what routing holds the key at whatever the rate does
+// afterwards.
 type SpendCap struct {
-	USD    float64 `json:"usd"`
+	USD float64 `json:"usd"`
+	// CNY is the amount when it was typed in yuan; USD is then unused by a
+	// command that sets it (SetKeySpendCap fills USD at Rate), and is the
+	// amount's value at Rate once kept
+	CNY *float64 `json:"cny,omitempty"`
+	// Rate is the yuan a dollar was counted at when the cap was typed in
+	// yuan; 0 for one in USD
+	Rate   float64 `json:"rate,omitempty"`
 	Period string  `json:"period"`
 	// Since is when a cap in all was set, what it counts from; kept while
 	// the cap stays one in all, its amount changed or not
 	Since time.Time `json:"since,omitzero"`
+}
+
+// Amount is the cap as typed and its currency, "cny" or "usd".
+func (c SpendCap) Amount() (float64, string) {
+	if c.CNY != nil {
+		return *c.CNY, "cny"
+	}
+	return c.USD, "usd"
 }
 
 // The periods a spend cap counts over: a calendar day or month in local
@@ -70,7 +92,7 @@ func (p Provider) KeySpendCap(keyID string) (SpendCap, bool) {
 // it had while it stays one; else it counts from now.
 func SetKeySpendCap(id, ref string, c *SpendCap) error {
 	if c != nil {
-		if err := checkSpendCap(*c); err != nil {
+		if err := prepareSpendCap(c); err != nil {
 			return err
 		}
 	}
@@ -110,12 +132,70 @@ func SetKeySpendCap(id, ref string, c *SpendCap) error {
 	return Save(*p)
 }
 
-// checkSpendCap says what is wrong with c, nil when nothing is.
+// prepareSpendCap fills in what a cap typed by a caller leaves out: one in
+// yuan has USD worked out at the dollar's rate in yuan magpie last learned
+// (never a guess), and Rate kept with it so what it shows stays what it is
+// held at. A cap already in USD is only checked.
+func prepareSpendCap(c *SpendCap) error {
+	if c.CNY != nil {
+		if c.USD != 0 {
+			return fmt.Errorf("a spend cap is in USD or in yuan, not both")
+		}
+		rate, known := cnyPerUSD()
+		if !known || rate <= 0 {
+			return fmt.Errorf("a spend cap in yuan needs the dollar's rate in yuan, which magpie hasn't learned yet; try again in a moment, or set the cap in USD")
+		}
+		c.Rate = rate
+		c.USD = *c.CNY / rate
+	}
+	return checkSpendCap(*c)
+}
+
+// checkSpendCap says what is wrong with a cap as it is kept, nil when
+// nothing is: the period and an amount above 0 and up to MaxSpendCap, in
+// its own currency, with a cap in yuan also carrying the rate it was set
+// at and the USD it worked out to.
 func checkSpendCap(c SpendCap) error {
 	switch c.Period {
 	case SpendDay, SpendMonth, SpendTotal:
 	default:
 		return fmt.Errorf("a spend cap is per %s, per %s or in all (%s), not %q", SpendDay, SpendMonth, SpendTotal, c.Period)
+	}
+	if c.CNY != nil {
+		if !(*c.CNY > 0 && *c.CNY <= MaxSpendCap) || math.IsNaN(*c.CNY) {
+			return fmt.Errorf("a spend cap is an amount in yuan above 0 and up to %d, not %v", MaxSpendCap, *c.CNY)
+		}
+		if !(c.Rate > 0) || math.IsNaN(c.Rate) {
+			return fmt.Errorf("a spend cap in yuan needs the dollar's rate in yuan it was set at, not %v", c.Rate)
+		}
+		if !(c.USD > 0 && c.USD <= MaxSpendCap) || math.IsNaN(c.USD) {
+			return fmt.Errorf("a spend cap in yuan works out to %v USD, not above 0 and up to %d", c.USD, MaxSpendCap)
+		}
+		return nil
+	}
+	if !(c.USD > 0 && c.USD <= MaxSpendCap) || math.IsNaN(c.USD) {
+		return fmt.Errorf("a spend cap is an amount in USD above 0 and up to %d, not %v", MaxSpendCap, c.USD)
+	}
+	return nil
+}
+
+// checkSpendCapAmount says what is wrong with the period and the amount c
+// types, before a cap in yuan is worked out in USD.
+func checkSpendCapAmount(c SpendCap) error {
+	switch c.Period {
+	case SpendDay, SpendMonth, SpendTotal:
+	default:
+		return fmt.Errorf("a spend cap is per %s, per %s or in all (%s), not %q", SpendDay, SpendMonth, SpendTotal, c.Period)
+	}
+	if c.CNY != nil {
+		if c.USD != 0 {
+			return fmt.Errorf("a spend cap is in USD or in yuan, not both")
+		}
+		v := *c.CNY
+		if !(v > 0 && v <= MaxSpendCap) || math.IsNaN(v) {
+			return fmt.Errorf("a spend cap is an amount in yuan above 0 and up to %d, not %v", MaxSpendCap, v)
+		}
+		return nil
 	}
 	if !(c.USD > 0 && c.USD <= MaxSpendCap) || math.IsNaN(c.USD) {
 		return fmt.Errorf("a spend cap is an amount in USD above 0 and up to %d, not %v", MaxSpendCap, c.USD)
@@ -124,17 +204,33 @@ func checkSpendCap(c SpendCap) error {
 }
 
 // ParseSpendCap reads a spend cap as the CLI takes it: an amount in USD
-// ("20", "$20", "12.5") and its period (day, month or total, per day by
-// default); off for none (nil).
+// ("20", "$20", "12.5") or in yuan ("¥140", "140cny", "140 rmb", "140元")
+// and its period (day, month or total, per day by default); off for none
+// (nil). A cap in yuan is worked out in USD when it is saved, at the rate
+// magpie last learned.
 func ParseSpendCap(amount, period string) (*SpendCap, error) {
 	a := strings.ToLower(strings.TrimSpace(amount))
 	switch a {
 	case "off", "none", "no", "-":
 		return nil, nil
 	}
-	usd, err := strconv.ParseFloat(strings.TrimPrefix(a, "$"), 64)
+	cny := false
+	for _, s := range []string{"¥", "￥", "cny", "rmb"} {
+		if strings.HasPrefix(a, s) {
+			a, cny = strings.TrimPrefix(a, s), true
+		}
+	}
+	for _, s := range []string{"元", "cny", "rmb", "yuan"} {
+		if strings.HasSuffix(a, s) {
+			a, cny = strings.TrimSuffix(a, s), true
+		}
+	}
+	if !cny {
+		a = strings.TrimSuffix(strings.TrimPrefix(a, "$"), "usd")
+	}
+	v, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(a), ",", ""), 64)
 	if err != nil {
-		return nil, fmt.Errorf("a spend cap is an amount in USD (20, 12.5) or off, not %q", amount)
+		return nil, fmt.Errorf("a spend cap is an amount in USD (20, 12.5), in yuan (¥140) or off, not %q", amount)
 	}
 	per := strings.ToLower(strings.TrimSpace(period))
 	switch per {
@@ -145,8 +241,11 @@ func ParseSpendCap(amount, period string) (*SpendCap, error) {
 	case "all", "in-all", "ever":
 		per = SpendTotal
 	}
-	c := SpendCap{USD: usd, Period: per}
-	if err := checkSpendCap(c); err != nil {
+	c := SpendCap{USD: v, Period: per}
+	if cny {
+		c = SpendCap{CNY: &v, Period: per}
+	}
+	if err := checkSpendCapAmount(c); err != nil {
 		return nil, err
 	}
 	return &c, nil
